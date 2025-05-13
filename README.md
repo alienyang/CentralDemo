@@ -289,10 +289,6 @@ graph TD
     D --> A
 ```
 
-以上圖表全面展示了 QChatSampleActivity 的架構、流程和模組關係，清晰地說明了該活動如何與其他組件交互以實現與 AR 眼鏡的語音通信功能。
-
-
-
 
 # CentralDemo Project Architecture
 
