@@ -1,3 +1,299 @@
+# QChatSampleActivity 架構解析
+
+## 架構圖
+
+```mermaid
+graph TD
+    A[QChatSampleActivity] --> B[QChatActionManager]
+    B --> C[BleClientService]
+    C --> D[AiManager]
+    D --> E[AR 眼鏡]
+    
+    F[EventBus] --> A
+    D --> F
+    
+    A --> G[UI 元件]
+    G --> H[開始錄音按鈕]
+    G --> I[停止錄音按鈕]
+    G --> J[發送命令按鈕]
+    G --> K[關閉按鈕]
+    G --> L[文本顯示區域]
+```
+
+## 流程圖
+
+### 開始錄音流程
+
+```mermaid
+sequenceDiagram
+    participant User as 用戶
+    participant QCA as QChatSampleActivity
+    participant QAM as QChatActionManager
+    participant BCS as BleClientService
+    participant AIM as AiManager
+    participant ARG as AR眼鏡
+    
+    User->>QCA: 點擊開始錄音按鈕
+    QCA->>QAM: startRecordingAsync(QChatType)
+    QAM-->>QAM: 發出 startRecordingTriggered 事件
+    QAM->>BCS: 通知開始錄音
+    BCS->>AIM: startRecording(QChatType)
+    AIM->>AIM: 開始錄音並處理
+    AIM->>ARG: 發送處理結果
+    AIM->>EventBus: 發送 OnSentenceDetected 事件
+    EventBus->>QCA: 接收 OnSentenceDetected 事件
+    QCA->>QCA: 更新 UI 顯示文本
+```
+
+### 停止錄音流程
+
+```mermaid
+sequenceDiagram
+    participant User as 用戶
+    participant QCA as QChatSampleActivity
+    participant QAM as QChatActionManager
+    participant BCS as BleClientService
+    participant AIM as AiManager
+    
+    User->>QCA: 點擊停止錄音按鈕
+    QCA->>QAM: stopRecordingAsync()
+    QAM-->>QAM: 發出 stopRecordingTriggered 事件
+    QAM->>BCS: 通知停止錄音
+    BCS->>AIM: stopRecording()
+    AIM->>AIM: 停止錄音並完成處理
+```
+
+### 發送命令流程
+
+```mermaid
+sequenceDiagram
+    participant User as 用戶
+    participant QCA as QChatSampleActivity
+    participant QAM as QChatActionManager
+    participant BCS as BleClientService
+    participant ARG as AR眼鏡
+    
+    User->>QCA: 點擊發送命令按鈕
+    QCA->>QAM: sendCommandAsync(byteArray)
+    QAM-->>QAM: 發出 commandToBeSent 事件
+    QAM->>BCS: 通知發送命令
+    BCS->>ARG: 通過藍牙發送命令
+```
+
+### 關閉活動流程
+
+```mermaid
+sequenceDiagram
+    participant User as 用戶
+    participant QCA as QChatSampleActivity
+    participant QAM as QChatActionManager
+    participant BCS as BleClientService
+    participant ARG as AR眼鏡
+    
+    User->>QCA: 點擊關閉按鈕
+    QCA->>QAM: stopRecordingAsync()
+    QAM->>BCS: 通知停止錄音
+    QCA->>QAM: sendCommandAsync(closeApp)
+    QAM->>BCS: 通知發送關閉命令
+    BCS->>ARG: 發送關閉應用命令
+    QCA->>QCA: finish() 關閉活動
+```
+
+## 模組圖
+
+```mermaid
+classDiagram
+    class QChatSampleActivity {
+        -ActivityQchatSampeBinding binding
+        -QChatActionManager qChatActions
+        -QChatType type
+        -byte[] closeApp
+        +onCreate(Bundle)
+        +onDestroy()
+        +onStartRecordingClicked(View)
+        +onStopRecordingClicked(View)
+        +onSendCommandClicked(View)
+        +onCloseClicked(View)
+        -startRecording()
+        -stopRecording()
+        -sendCommand(byte[])
+        +onSentenceDetected(OnSentenceDetected)
+    }
+    
+    class QChatActionManager {
+        -MutableSharedFlow<QChatType> _startRecordingTriggered
+        -MutableSharedFlow<Any> _stopRecordingTriggered
+        -MutableSharedFlow<ByteArray> _commandToBeSent
+        +SharedFlow<QChatType> startRecordingTriggered
+        +SharedFlow<Any> stopRecordingTriggered
+        +SharedFlow<ByteArray> commandToBeSent
+        -startRecording(QChatType)
+        -stopRecording()
+        -sendCommand(ByteArray)
+        +startRecordingAsync(QChatType): CompletableFuture
+        +stopRecordingAsync(): CompletableFuture
+        +sendCommandAsync(ByteArray): CompletableFuture
+    }
+    
+    class BleClientService {
+        -BleClient bleClient
+        -AiManager aiManager
+        -QChatActionManager qChatAction
+        +init()
+        +startVoiceRecorder()
+        +stopVoiceRecorder()
+        +sendShortMessage(ByteArray)
+    }
+    
+    class AiManager {
+        -IAiManager listener
+        +startRecording(QChatType)
+        +stopRecording()
+        +analyzeImage(ByteArray)
+    }
+    
+    class OnSentenceDetected {
+        -String _sentence
+        +String getSentence()
+    }
+    
+    class QChatType {
+        <<enumeration>>
+        Translation
+        Menu
+        VoiceAssistant
+        AICamera
+        None
+    }
+    
+    QChatSampleActivity --> QChatActionManager: 使用
+    QChatSampleActivity --> QChatType: 使用
+    QChatSampleActivity ..> OnSentenceDetected: 接收
+    QChatActionManager --> BleClientService: 通知
+    BleClientService --> AiManager: 使用
+    AiManager ..> OnSentenceDetected: 發送
+```
+
+## QChatSampleActivity 功能模組
+
+```mermaid
+graph TB
+    subgraph QChatSampleActivity
+        A[初始化] --> B[UI 交互]
+        B --> C[錄音控制]
+        B --> D[命令發送]
+        B --> E[活動關閉]
+        F[事件處理] --> G[更新 UI]
+    end
+    
+    subgraph QChatActionManager
+        H[事件流管理] --> I[異步橋接]
+        I --> J[Java 兼容性]
+    end
+    
+    subgraph BleClientService
+        K[藍牙通信] --> L[語音處理]
+        L --> M[AI 分析]
+    end
+    
+    subgraph AR眼鏡
+        N[接收命令] --> O[執行操作]
+        O --> P[返回結果]
+    end
+    
+    C --> H
+    D --> H
+    E --> H
+    H --> K
+    P --> F
+```
+
+## QChatType 與功能對應
+
+```mermaid
+graph LR
+    subgraph QChatType
+        A[Translation] --> B[翻譯功能]
+        C[Menu] --> D[菜單控制]
+        E[VoiceAssistant] --> F[語音助手]
+        G[AICamera] --> H[AI 相機功能]
+        I[None] --> J[無特定功能]
+    end
+    
+    B --> K[語音翻譯處理]
+    D --> L[菜單導航控制]
+    F --> M[語音指令處理]
+    H --> N[圖像分析處理]
+```
+
+## 數據流向圖
+
+```mermaid
+graph TD
+    A[用戶語音輸入] --> B[QChatSampleActivity]
+    B --> C[QChatActionManager]
+    C --> D[BleClientService]
+    D --> E[AiManager]
+    E --> F[語音處理]
+    F --> G[文本轉換]
+    G --> H[命令識別]
+    H --> I[EventBus]
+    I --> J[OnSentenceDetected]
+    J --> K[UI 更新]
+    H --> L[命令發送]
+    L --> M[AR眼鏡]
+    M --> N[執行操作]
+    N --> O[返回結果]
+    O --> P[藍牙接收]
+    P --> Q[事件通知]
+    Q --> R[UI 反饋]
+```
+
+## 組件交互關係
+
+```mermaid
+graph TD
+    subgraph 用戶界面層
+        A[QChatSampleActivity]
+        B[activity_qchat_sampe.xml]
+    end
+    
+    subgraph 事件管理層
+        C[QChatActionManager]
+        D[EventBus]
+    end
+    
+    subgraph 服務層
+        E[BleClientService]
+    end
+    
+    subgraph 處理層
+        F[AiManager]
+    end
+    
+    subgraph 通信層
+        G[BleClient]
+    end
+    
+    subgraph 設備層
+        H[AR眼鏡]
+    end
+    
+    A <--> B
+    A --> C
+    C --> E
+    E --> F
+    E --> G
+    G --> H
+    F --> D
+    D --> A
+```
+
+以上圖表全面展示了 QChatSampleActivity 的架構、流程和模組關係，清晰地說明了該活動如何與其他組件交互以實現與 AR 眼鏡的語音通信功能。
+
+
+
+
 # CentralDemo Project Architecture
 
 Based on my analysis of the project, I've created an architecture diagram and explanation for the CentralDemo project, which uses Bluetooth to communicate with Android AR glasses, with CentralLib as a submodule.
